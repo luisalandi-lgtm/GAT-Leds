@@ -1,0 +1,6 @@
+build/
+bin/
+.vscode/
+*.tmp
+*.bak
+.DS_Store
