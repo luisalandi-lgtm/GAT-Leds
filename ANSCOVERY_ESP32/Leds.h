@@ -3,18 +3,13 @@
 
 #include <Arduino.h>
 
-// Gestione barra LED WS2812B (6 barre da 8 LED)
+// Funzioni di gestione LED WS2812
 void initLeds();
 void clearLeds();
-
-// Lampeggio di conferma all'avvio di un test (non bloccante)
-void startConfirmBlink(uint8_t r, uint8_t g, uint8_t b);
-// Disegna il lampeggio se attivo; ritorna true finche' e' in corso
-bool updateConfirmBlink();
-
-// level = 0..1 (stesso valore inviato su OUT2)
-void updateDeepBreathingLeds(float level);
+void blinkLedsConfirm(uint8_t r, uint8_t g, uint8_t b);
+void updateIdleLeds();
+void updateDeepBreathingLeds(bool active);
 void updateValsalvaLeds(float pressure);
-void updateHandgripLeds(float delta, float mediaPeaks, float target);
+void updateHandgripLeds(float force, float mediaPeaks, float targetForce);
 
 #endif

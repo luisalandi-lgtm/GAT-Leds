@@ -1,205 +1,171 @@
 #include "Hardware.h"
-#include <Wire.h>
-#include <math.h>
+#include "Config.h"
+#include <Adafruit_NeoPixel.h> // Inclusione per la Barra LED
 
-// ==========================================
-// SENSORI
-// ==========================================
+#define MPU6050_ADDR 0x68 // Indirizzo I2C standard dell'MPU-6050
 
-static SensorData data = {0, 0, false, 0, 0, 0};
-
-// Storico dell'angolo per calcolare la velocita' su 1 s
-static const int TILT_HISTORY_LEN = 1000 / SENSOR_SAMPLE_MS;
-static float tiltHistory[TILT_HISTORY_LEN];
-static int tiltHistoryIdx = 0;
-static bool tiltFilterInit = false;
-
-static float hgBaseline = 0.0f;
-static bool hgBaselineInit = false;
-static bool hgBaselineTracking = true;
-
-static bool readMpuAngle(float &angleDeg) {
-    Wire.beginTransmission(MPU6050_ADDR);
-    Wire.write(0x3B); // ACCEL_XOUT_H
-    if (Wire.endTransmission(false) != 0) return false;
-    if (Wire.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)6) != 6) return false;
-
-    int16_t accX = (Wire.read() << 8) | Wire.read();
-    int16_t accY = (Wire.read() << 8) | Wire.read();
-    int16_t accZ = (Wire.read() << 8) | Wire.read();
-
-    float ax = accX / 16384.0f;
-    float ay = accY / 16384.0f;
-    float az = accZ / 16384.0f;
-
-    // Inclinazione dell'asse Y rispetto al piano orizzontale
-    float angleRad = atan2f(ay, sqrtf(ax * ax + az * az));
-    angleDeg = fabsf(angleRad * (180.0f / (float)M_PI));
-    return true;
-}
-
-static float readAdcAveraged(int pin) {
-    uint32_t sum = 0;
-    for (int i = 0; i < ADC_OVERSAMPLE; i++) {
-        sum += analogRead(pin);
-    }
-    return (float)sum / ADC_OVERSAMPLE;
-}
-
-static float adcToMmHg(float raw, float zeroAdc, float maxAdc, float maxMmHg) {
-    float p = ((raw - zeroAdc) / (maxAdc - zeroAdc)) * maxMmHg;
-    return (p < 0.0f) ? 0.0f : p;
-}
+static Adafruit_NeoPixel ledBar(NUM_LEDS, PIN_LED_BAR, NEO_GRB + NEO_KHZ800);
+static unsigned long markerStartTime = 0;
+static unsigned long markerDuration = 0;
+static bool markerActive = false;
 
 void initHardware() {
-    // GPIO34..39 non hanno pull-up interni: servono resistenze esterne (R1/R2/R3 sul PCB)
     pinMode(PIN_BTN_MARKER, INPUT_PULLUP);
     pinMode(PIN_BTN_AZZERA_T1, INPUT_PULLUP);
-
+    
     analogReadResolution(12);
     analogSetPinAttenuation(PIN_ADC_VALSALVA, ADC_11db);
     analogSetPinAttenuation(PIN_ADC_HANDGRIP, ADC_11db);
 
-    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    Wire.setClock(400000);
+    pinMode(PIN_ADC_VALSALVA, INPUT);
+    pinMode(PIN_ADC_HANDGRIP, INPUT);
 
-    // Risveglio MPU-6050 (PWR_MGMT_1 = 0)
+    // Inizializzazione Barra LED NeoPixel
+    ledBar.begin();
+    ledBar.setBrightness(50); // Luminosità regolabile (0..255)
+
+    // Inizializzazione Bus I2C per MPU-6050
+    Wire.begin(21, 22); // SDA = IO21, SCL = IO22 (modifica i pin se diversi su MYSIGN)
+    
+    // Risveglio MPU-6050 dal registro di sleep (PWR_MGMT_1 -> 0x6B)
     Wire.beginTransmission(MPU6050_ADDR);
     Wire.write(0x6B);
-    Wire.write(0);
-    data.tiltOk = (Wire.endTransmission(true) == 0);
-    if (!data.tiltOk) {
-        LOGF("!! MPU-6050 non risponde all'indirizzo 0x%02X: Tilt Test disabilitato\n", MPU6050_ADDR);
-    }
+    Wire.write(0); 
+    Wire.endTransmission(true);
 }
 
-void setHandgripBaselineTracking(bool enabled) {
-    hgBaselineTracking = enabled;
+// Calcolo effettivo dell'angolo di inclinazione (Tilt) con MPU-6050
+float readTiltAngle() {
+    Wire.beginTransmission(MPU6050_ADDR);
+    Wire.write(0x3B); // Registro iniziale dati accelerometro (ACCEL_XOUT_H)
+    Wire.endTransmission(false);
+    Wire.requestFrom(MPU6050_ADDR, 6, true);
+
+    if (Wire.available() < 6) return 0.0f;
+
+    int16_t AccX = (Wire.read() << 8) | Wire.read();
+    int16_t AccY = (Wire.read() << 8) | Wire.read();
+    int16_t AccZ = (Wire.read() << 8) | Wire.read();
+
+    // Converti le letture grezze dell'accelerometro in g (scala +/- 2g = 16384 LSB/g)
+    float ax = AccX / 16384.0f;
+    float ay = AccY / 16384.0f;
+    float az = AccZ / 16384.0f;
+
+    // Calcolo dell'angolo di Tilt rispetto all'asse di gravità (in Gradi)
+    float angleRad = atan2(ay, sqrt(ax * ax + az * az));
+    float angleDeg = abs(angleRad * (180.0f / M_PI));
+
+    return angleDeg;
 }
 
-void sampleSensors() {
-    static uint32_t lastSample = 0;
-    uint32_t now = millis();
-    if (now - lastSample < SENSOR_SAMPLE_MS) return;
-    lastSample = now;
-
-    // --- Angolo lettino ---
-    float angle;
-    bool ok = readMpuAngle(angle);
-    if (ok != data.tiltOk) {
-        LOGF(ok ? ">> MPU-6050 tornato disponibile\n" : "!! MPU-6050: lettura fallita\n");
-        data.tiltOk = ok;
-    }
-    if (ok) {
-        if (!tiltFilterInit) {
-            data.tiltAngle = angle;
-            for (int i = 0; i < TILT_HISTORY_LEN; i++) tiltHistory[i] = angle;
-            tiltFilterInit = true;
-        } else {
-            data.tiltAngle += TILT_FILTER_ALPHA * (angle - data.tiltAngle);
-        }
-    }
-    // tiltHistory[idx] contiene il campione di 1 s fa
-    data.tiltRate = data.tiltAngle - tiltHistory[tiltHistoryIdx];
-    tiltHistory[tiltHistoryIdx] = data.tiltAngle;
-    tiltHistoryIdx = (tiltHistoryIdx + 1) % TILT_HISTORY_LEN;
-
-    // --- Valsalva ---
-    data.valsalvaMmHg = adcToMmHg(readAdcAveraged(PIN_ADC_VALSALVA),
-                                  VALSALVA_ZERO_ADC, VALSALVA_MAX_ADC, VALSALVA_MAX_MMHG);
-
-    // --- Hand Grip: pressione assoluta e incremento sul precarico ---
-    float hg = adcToMmHg(readAdcAveraged(PIN_ADC_HANDGRIP),
-                         HANDGRIP_ZERO_ADC, HANDGRIP_MAX_ADC, HANDGRIP_MAX_MMHG);
-    data.handgripMmHg = hg;
-    if (!hgBaselineInit) {
-        hgBaseline = hg;
-        hgBaselineInit = true;
-    }
-    float delta = hg - hgBaseline;
-    // Il precarico viene inseguito lentamente solo in IDLE e lontano da una stretta
-    if (hgBaselineTracking && delta < HG_SQUEEZE_END_DELTA) {
-        hgBaseline += HG_BASELINE_ALPHA * (hg - hgBaseline);
-        delta = hg - hgBaseline;
-    }
-    data.handgripDelta = (delta < 0.0f) ? 0.0f : delta;
+void updateTiltDAC(float angle) {
+    // Mappa l'angolo 0°..60° sulla scala DAC 8-bit (0..255)
+    float normalized = angle / 60.0f;
+    if (normalized > 1.0f) normalized = 1.0f;
+    if (normalized < 0.0f) normalized = 0.0f;
+    
+    uint8_t dacVal = (uint8_t)(normalized * 255.0f);
+    dacWrite(PIN_DAC_OUT2, dacVal);
 }
 
-const SensorData& sensors() {
-    return data;
+float readValsalvaPressure() {
+    // Media mobile rapida su 4 campioni per abbattere il rumore ADC dell'ESP32
+    int sum = 0;
+    for (int i = 0; i < 4; i++) {
+        sum += analogRead(PIN_ADC_VALSALVA);
+    }
+    float raw = sum / 4.0f;
+
+    // Calcolo della pressione in mmHg con clamp per evitare valori negativi
+    float pressure = ((raw - VALSALVA_ZERO_ADC) / (VALSALVA_MAX_ADC - VALSALVA_ZERO_ADC)) * VALSALVA_MAX_MMHG;
+    if (pressure < 0.0f) pressure = 0.0f;
+
+    return pressure;
 }
 
-// ==========================================
-// PULSANTI (con antirimbalzo)
-// ==========================================
-
-struct DebouncedButton {
-    uint8_t pin;
-    bool stableState;      // HIGH = rilasciato
-    bool lastRaw;
-    uint32_t lastChange;
-};
-
-static DebouncedButton btnT1     = {PIN_BTN_AZZERA_T1, HIGH, HIGH, 0};
-static DebouncedButton btnMarker = {PIN_BTN_MARKER,    HIGH, HIGH, 0};
-
-// Aggiorna lo stato; ritorna true se lo stato stabile e' cambiato
-static bool updateButton(DebouncedButton &b) {
-    bool raw = digitalRead(b.pin);
-    uint32_t now = millis();
-    if (raw != b.lastRaw) {
-        b.lastRaw = raw;
-        b.lastChange = now;
+float readHandGripPressure() {
+    int sum = 0;
+    for (int i = 0; i < 4; i++) {
+        sum += analogRead(PIN_ADC_HANDGRIP);
     }
-    if (raw != b.stableState && (now - b.lastChange) >= BTN_DEBOUNCE_MS) {
-        b.stableState = raw;
-        return true;
-    }
-    return false;
+    float raw = sum / 4.0f;
+
+    // Calcolo della forza/pressione in Kg
+    float force = ((raw - HANDGRIP_ZERO_ADC) / (HANDGRIP_MAX_ADC - HANDGRIP_ZERO_ADC)) * HANDGRIP_MAX_KG;
+
+    force -= 5.0f;
+    
+    if (force < 0.0f) force = 0.0f;
+    return force;
 }
 
 bool isBtnAzzeraT1Pressed() {
-    return updateButton(btnT1) && btnT1.stableState == LOW;
+    static bool lastBtnState = HIGH;
+    bool currentState = digitalRead(PIN_BTN_AZZERA_T1);
+    bool pressed = (lastBtnState == HIGH && currentState == LOW);
+    lastBtnState = currentState;
+    return pressed;
 }
 
 MarkerEvent checkMarkerBtnEvent() {
-    static uint32_t pressStart = 0;
-    static uint32_t lastClickRelease = 0;
-    static uint8_t clickCount = 0;
-    static bool longPressFired = false;
+    static bool lastState = HIGH;
+    static unsigned long pressStartTime = 0;
+    static unsigned long lastReleaseTime = 0;
+    static int clickCount = 0;
+    static bool waitingForSecondClick = false;
 
-    uint32_t now = millis();
-    bool changed = updateButton(btnMarker);
-    bool pressed = (btnMarker.stableState == LOW);
+    bool currentState = digitalRead(PIN_BTN_MARKER);
+    unsigned long now = millis();
+    MarkerEvent detectedEvent = EVENT_NONE;
 
-    if (changed && pressed) {
-        pressStart = now;
-        longPressFired = false;
+    if (lastState == HIGH && currentState == LOW) {
+        pressStartTime = now;
     }
 
-    // Pressione prolungata: evento generato mentre il tasto e' ancora premuto
-    if (pressed && !longPressFired && (now - pressStart) >= BTN_LONG_PRESS_MS) {
-        longPressFired = true;
-        clickCount = 0;
-        return EVENT_LONG_PRESS;
-    }
+    if (lastState == LOW && currentState == HIGH) {
+        unsigned long pressDuration = now - pressStartTime;
 
-    if (changed && !pressed) {
-        uint32_t duration = now - pressStart;
-        if (!longPressFired && duration < BTN_CLICK_MAX_MS) {
+        if (pressDuration >= 5000) {
+            detectedEvent = EVENT_LONG_PRESS;
+            clickCount = 0;
+            waitingForSecondClick = false;
+        } else if (pressDuration > 50) {
             clickCount++;
-            lastClickRelease = now;
-            if (clickCount >= 2) {
-                clickCount = 0;
-                return EVENT_DOUBLE_CLICK;
-            }
+            lastReleaseTime = now;
+            waitingForSecondClick = true;
         }
     }
 
-    if (clickCount == 1 && !pressed && (now - lastClickRelease) > BTN_DOUBLE_CLICK_MS) {
+    if (waitingForSecondClick && (now - lastReleaseTime > 300)) {
+        if (clickCount == 1) {
+            detectedEvent = EVENT_SINGLE_CLICK;
+        } else if (clickCount >= 2) {
+            detectedEvent = EVENT_DOUBLE_CLICK;
+        }
         clickCount = 0;
-        return EVENT_SINGLE_CLICK;
+        waitingForSecondClick = false;
     }
 
-    return EVENT_NONE;
+    lastState = currentState;
+    return detectedEvent;
+}
+
+void triggerMarker(float voltage, unsigned long durationMs) {
+    if (markerActive) return;
+    
+    int dacValue = (int)((voltage / 3.3f) * 255.0f);
+    if (dacValue > 255) dacValue = 255;
+    
+    dacWrite(PIN_DAC_OUT1, dacValue);
+    markerStartTime = millis();
+    markerDuration = durationMs;
+    markerActive = true;
+}
+
+void updateMarker() {
+    if (markerActive && (millis() - markerStartTime >= markerDuration)) {
+        dacWrite(PIN_DAC_OUT1, 0);
+        markerActive = false;
+    }
 }
