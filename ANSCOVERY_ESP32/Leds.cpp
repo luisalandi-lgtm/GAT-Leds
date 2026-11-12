@@ -1,143 +1,112 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include <string.h>
 #include "Leds.h"
 #include "Config.h"
 
 static Adafruit_NeoPixel strip(NUM_LEDS, PIN_LED_BAR, NEO_GRB + NEO_KHZ800);
-static uint32_t breathStartTime = 0;
 
-void initLedsHardware() {
+// Copia dell'ultimo frame inviato: show() solo se qualcosa e' cambiato
+static uint8_t lastFrame[NUM_LEDS * 3];
+
+static const uint8_t  BLINK_COUNT  = 2;
+static const uint16_t BLINK_ON_MS  = 150;
+static const uint16_t BLINK_OFF_MS = 150;
+static bool blinkActive = false;
+static uint32_t blinkStart = 0;
+static uint32_t blinkColor = 0;
+
+static void render() {
+    uint8_t *px = strip.getPixels();
+    if (memcmp(px, lastFrame, sizeof(lastFrame)) != 0) {
+        strip.show();
+        memcpy(lastFrame, px, sizeof(lastFrame));
+    }
+}
+
+void initLeds() {
     strip.begin();
     strip.setBrightness(LED_BRIGHTNESS);
     strip.clear();
     strip.show();
-}
-
-void initLeds() {
-    initLedsHardware();
+    memset(lastFrame, 0, sizeof(lastFrame));
 }
 
 void clearLeds() {
     strip.clear();
-    strip.show();
+    render();
 }
 
-void blinkLedsConfirm(uint8_t r, uint8_t g, uint8_t b) {
-    for (int k = 0; k < 2; k++) {
-        strip.fill(strip.Color(r, g, b));
-        strip.show();
-        delay(120);
-        strip.clear();
-        strip.show();
-        delay(120);
-    }
+void startConfirmBlink(uint8_t r, uint8_t g, uint8_t b) {
+    blinkActive = true;
+    blinkStart = millis();
+    blinkColor = strip.Color(r, g, b);
 }
 
-void updateDeepBreathingLeds(bool active) {
-    if (!active) {
-        if (breathStartTime != 0) {
-            breathStartTime = 0;
-            clearLeds();
-        }
-        return;
+bool updateConfirmBlink() {
+    if (!blinkActive) return false;
+
+    uint32_t elapsed = millis() - blinkStart;
+    uint32_t period = BLINK_ON_MS + BLINK_OFF_MS;
+    if (elapsed >= (uint32_t)BLINK_COUNT * period) {
+        blinkActive = false;
+        clearLeds();
+        return false;
     }
-
-    if (breathStartTime == 0) {
-        breathStartTime = millis();
-    }
-
-    uint32_t elapsedTime = (millis() - breathStartTime) % BREATH_CYCLE_MS;
-    int ledsToLight = 0;
-
-    if (elapsedTime < BREATH_IN_TIME_MS) {
-        ledsToLight = map(elapsedTime, 0, BREATH_IN_TIME_MS, 0, NUM_LEDS);
+    if ((elapsed % period) < BLINK_ON_MS) {
+        strip.fill(blinkColor);
     } else {
-        uint32_t breathOutTime = elapsedTime - BREATH_IN_TIME_MS;
-        ledsToLight = map(breathOutTime, 0, BREATH_OUT_TIME_MS, NUM_LEDS, 0);
+        strip.clear();
     }
+    render();
+    return true;
+}
 
-    if (ledsToLight > NUM_LEDS) ledsToLight = NUM_LEDS;
-    if (ledsToLight < 0) ledsToLight = 0;
+static void drawLevel(int lit, uint32_t color) {
+    if (lit < 0) lit = 0;
+    if (lit > NUM_LEDS) lit = NUM_LEDS;
+    for (int i = 0; i < NUM_LEDS; i++) {
+        strip.setPixelColor(i, i < lit ? color : 0);
+    }
+}
+
+void updateDeepBreathingLeds(float level) {
+    drawLevel((int)(level * NUM_LEDS + 0.5f), strip.Color(0, 100, 255));
+    render();
+}
+
+// Barra con indicatore del target: rosso sotto target, verde sopra, target giallo
+static void drawTargetBar(float value, float fullScale, float target) {
+    int lit = (int)((value / fullScale) * NUM_LEDS);
+    int targetIdx = (int)((target / fullScale) * NUM_LEDS);
+    if (targetIdx >= NUM_LEDS) targetIdx = NUM_LEDS - 1;
+    bool reached = (value >= target);
 
     for (int i = 0; i < NUM_LEDS; i++) {
-        if (i < ledsToLight) {
-            strip.setPixelColor(i, strip.Color(0, 100, 255)); // BLU Deep Breathing
+        if (i == targetIdx) {
+            strip.setPixelColor(i, strip.Color(255, 255, 0));
+        } else if (i < lit) {
+            strip.setPixelColor(i, reached ? strip.Color(0, 255, 0) : strip.Color(255, 0, 0));
         } else {
-            strip.setPixelColor(i, strip.Color(0, 0, 0));     // SPENTO FORZATO
+            strip.setPixelColor(i, 0);
         }
     }
-    strip.show();
 }
 
 void updateValsalvaLeds(float pressure) {
-    // SOGLIA MINIMA: Se la pressione è sotto 5.0 mmHg, spegni i LED
-    if (pressure < 5.0f) { 
+    if (pressure < 5.0f) {
         clearLeds();
         return;
     }
-
-    int totalLeds = strip.numPixels();
-
-    int ledsToLight = (int)((pressure / VALSALVA_MAX_SCALE) * totalLeds);
-    if (ledsToLight > totalLeds) ledsToLight = totalLeds;
-
-    int targetLedIndex = (int)((TARGET_VALSALVA / VALSALVA_MAX_SCALE) * totalLeds);
-
-    // Controlla se il target è stato raggiunto o superato
-    bool targetReached = (pressure >= TARGET_VALSALVA);
-
-    for (int i = 0; i < totalLeds; i++) {
-        if (i == targetLedIndex) {
-            // Il LED di riferimento del target rimane sempre GIALLO
-            strip.setPixelColor(i, strip.Color(255, 255, 0)); 
-        } else if (i < ledsToLight) {
-            if (targetReached) {
-                strip.setPixelColor(i, strip.Color(0, 255, 0)); // VERDE se target raggiunto
-            } else {
-                strip.setPixelColor(i, strip.Color(255, 0, 0)); // ROSSO sotto il target
-            }
-        } else {
-            strip.setPixelColor(i, strip.Color(0, 0, 0));     // SPENTO
-        }
-    }
-    strip.show();
+    drawTargetBar(pressure, VALSALVA_LED_SCALE, VALSALVA_TARGET);
+    render();
 }
 
-void updateHandgripLeds(float currentForce, float maxMedia, float targetForce) {
-    // SOGLIA MINIMA: Spegni i LED se la forza è trascurabile o se la media non è valida
-    if (maxMedia <= 0.0f || currentForce < 1.0f) { 
+void updateHandgripLeds(float delta, float mediaPeaks, float target) {
+    if (mediaPeaks <= 0.0f || delta < 1.0f) {
         clearLeds();
         return;
     }
-
-    int totalLeds = strip.numPixels();
-
-    int ledsToLight = (int)((currentForce / maxMedia) * totalLeds);
-    if (ledsToLight > totalLeds) ledsToLight = totalLeds;
-
-    int targetLedIndex = (int)((targetForce / maxMedia) * totalLeds);
-
-    // Controlla se il target è stato raggiunto o superato
-    bool targetReached = (currentForce >= targetForce);
-
-    for (int i = 0; i < totalLeds; i++) {
-        if (i == targetLedIndex) {
-            // Il LED di riferimento del target rimane sempre GIALLO
-            strip.setPixelColor(i, strip.Color(255, 255, 0)); 
-        } else if (i < ledsToLight) {
-            if (targetReached) {
-                strip.setPixelColor(i, strip.Color(0, 255, 0)); // VERDE se target raggiunto
-            } else {
-                strip.setPixelColor(i, strip.Color(255, 0, 0)); // ROSSO sotto il target
-            }
-        } else {
-            strip.setPixelColor(i, strip.Color(0, 0, 0));     // SPENTO
-        }
-    }
-    strip.show();
-}
-
-void updateIdleLeds() {
-    // In IDLE la barra rimane totalmente spenta
-    clearLeds();
+    drawTargetBar(delta, mediaPeaks, target);
+    render();
 }
