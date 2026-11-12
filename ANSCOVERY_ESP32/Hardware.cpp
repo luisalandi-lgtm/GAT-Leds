@@ -1,10 +1,19 @@
+// =====================================================================
+// Hardware.cpp - Accesso all'hardware
+// Lettura dei sensori (MPU-6050 via I2C, pressioni via ADC), pulsanti,
+// marker su OUT1, scrittura dei DAC e stampa delle uscite su seriale.
+// =====================================================================
+
 #include "Hardware.h"
 #include "Config.h"
 #include <Adafruit_NeoPixel.h> // Inclusione per la Barra LED
 
 #define MPU6050_ADDR 0x68 // Indirizzo I2C standard dell'MPU-6050
 
+// Oggetto della barra LED inizializzato qui ma non usato altrove:
+// la barra e' gestita dall'oggetto strip in Leds.cpp
 static Adafruit_NeoPixel ledBar(NUM_LEDS, PIN_LED_BAR, NEO_GRB + NEO_KHZ800);
+// Stato del marker su OUT1: istante di inizio, durata, se e' in corso
 static unsigned long markerStartTime = 0;
 static unsigned long markerDuration = 0;
 static bool markerActive = false;
@@ -39,6 +48,8 @@ void printOutputs() {
     }
 }
 
+// Pulsanti con pull-up, ADC a 12 bit con attenuazione 11 dB (circa 0..3,1 V),
+// barra LED, bus I2C e risveglio dell'MPU-6050
 void initHardware() {
     pinMode(PIN_BTN_MARKER, INPUT_PULLUP);
     pinMode(PIN_BTN_AZZERA_T1, INPUT_PULLUP);
@@ -65,6 +76,8 @@ void initHardware() {
 }
 
 // Calcolo effettivo dell'angolo di inclinazione (Tilt) con MPU-6050
+// Inclinazione (0..90 gradi) dell'asse Y del sensore rispetto al piano orizzontale.
+// Se l'MPU-6050 non risponde restituisce 0.
 float readTiltAngle() {
     Wire.beginTransmission(MPU6050_ADDR);
     Wire.write(0x3B); // Registro iniziale dati accelerometro (ACCEL_XOUT_H)
@@ -89,6 +102,7 @@ float readTiltAngle() {
     return angleDeg;
 }
 
+// Non chiamata nel codice attuale: l'OUT2 del Tilt e' scritto in FSM.cpp
 void updateTiltDAC(float angle) {
     // Mappa l'angolo 0°..60° sulla scala DAC 8-bit (0..255)
     float normalized = angle / 60.0f;
@@ -99,6 +113,8 @@ void updateTiltDAC(float angle) {
     writeOutput(PIN_DAC_OUT2, dacVal);
 }
 
+// Pressione SP1 in mmHg: media di 4 letture ADC, scalata tra
+// VALSALVA_ZERO_ADC (0 mmHg) e VALSALVA_MAX_ADC (VALSALVA_MAX_MMHG)
 float readValsalvaPressure() {
     // Media mobile rapida su 4 campioni per abbattere il rumore ADC dell'ESP32
     int sum = 0;
@@ -114,6 +130,8 @@ float readValsalvaPressure() {
     return pressure;
 }
 
+// Forza Hand Grip in kg: media di 4 letture ADC, scalata tra
+// HANDGRIP_ZERO_ADC (0 kg) e HANDGRIP_MAX_ADC (HANDGRIP_MAX_KG), meno 5 kg
 float readHandGripPressure() {
     int sum = 0;
     for (int i = 0; i < 4; i++) {
@@ -130,6 +148,7 @@ float readHandGripPressure() {
     return force;
 }
 
+// true solo nel ciclo in cui il pulsante passa da rilasciato a premuto (senza antirimbalzo)
 bool isBtnAzzeraT1Pressed() {
     static bool lastBtnState = HIGH;
     bool currentState = digitalRead(PIN_BTN_AZZERA_T1);
@@ -138,6 +157,10 @@ bool isBtnAzzeraT1Pressed() {
     return pressed;
 }
 
+// Riconosce i gesti sul pulsante MARKER:
+// - pressione >= 5 s          -> EVENT_LONG_PRESS (al rilascio)
+// - pressione da 50 ms a 5 s  -> conta un click
+// - 300 ms senza nuovi click  -> EVENT_SINGLE_CLICK (1 click) o EVENT_DOUBLE_CLICK (2 o piu')
 MarkerEvent checkMarkerBtnEvent() {
     static bool lastState = HIGH;
     static unsigned long pressStartTime = 0;
@@ -181,6 +204,8 @@ MarkerEvent checkMarkerBtnEvent() {
     return detectedEvent;
 }
 
+// Avvia un marker su OUT1: tensione convertita in valore DAC (3,3 V = 255, oltre viene
+// limitata a 255). Se un marker e' gia' in corso la richiesta viene ignorata.
 void triggerMarker(float voltage, unsigned long durationMs) {
     if (markerActive) return;
     
@@ -193,6 +218,7 @@ void triggerMarker(float voltage, unsigned long durationMs) {
     markerActive = true;
 }
 
+// Riporta OUT1 a 0 V quando la durata del marker e' trascorsa
 void updateMarker() {
     if (markerActive && (millis() - markerStartTime >= markerDuration)) {
         writeOutput(PIN_DAC_OUT1, 0);

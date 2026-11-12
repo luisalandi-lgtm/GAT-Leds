@@ -1,3 +1,5 @@
+// Leds.h - Barra LED WS2812B (feedback visivo per paziente e operatore)
+
 #ifndef LEDS_H
 #define LEDS_H
 

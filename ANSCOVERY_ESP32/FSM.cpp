@@ -1,9 +1,19 @@
+// =====================================================================
+// FSM.cpp - Macchina a stati del sistema
+// In IDLE riconosce quale manovra sta iniziando (dai sensori o dal
+// pulsante MARKER), poi ne gestisce le fasi: marker su OUT1, segnale
+// continuo su OUT2, Tempo 1 / Tempo 2 e barra LED.
+// Ogni manovra ha la sua sotto-macchina a stati (un enum e uno switch).
+// =====================================================================
+
 #include "FSM.h"
 #include "Hardware.h"
 #include "Leds.h"
 #include "Display.h"
 
+// Dichiarazione anticipata: la funzione e' definita in fondo al file
 void logCurrentTestStatus();
+// Manovra attiva (TEST_MODE_IDLE = nessuna)
 SystemTestMode currentTestMode = TEST_MODE_IDLE;
 
 // Soglie per Auto-Detect in IDLE
@@ -14,6 +24,7 @@ SystemTestMode currentTestMode = TEST_MODE_IDLE;
 // Stati specifici per il Deep Breathing
 static bool deepBreathingLedsActive = false; // Barra LED attiva per familiarizzazione
 static bool deepBreathingRecording  = false; // Registrazione effettiva in corso (10 atti)
+// Istante del doppio click che ha avviato il Deep Breathing
 static uint32_t dbTestStartTime = 0; 
 const uint32_t HUMAN_LOCKOUT_MS = 1500; // 1.5 secondi di blocco minimo dopo l'avvio
 
@@ -21,12 +32,14 @@ const uint32_t HUMAN_LOCKOUT_MS = 1500; // 1.5 secondi di blocco minimo dopo l'a
 #define DEEP_BREATHING_TOTAL_MS (10 * BREATH_CYCLE_MS)
 
 // Stati per la FSM Valsalva
+// VALSALVA_IDLE: attesa del superamento di 25 mmHg; VALSALVA_ACTIVE: espirazione in corso
 enum ValsalvaPhase {
     VALSALVA_IDLE,
     VALSALVA_ACTIVE
 };
 
 static ValsalvaPhase currentValsalvaPhase = VALSALVA_IDLE;
+// Ultimo istante con pressione >= 10 mmHg: serve a contare i 3 s sotto soglia
 static uint32_t valsalvaEndTimer = 0;
 
 // --- STATI TILT TEST ---
@@ -38,9 +51,13 @@ enum TiltPhase {
 };
 
 static TiltPhase currentTiltPhase = TILT_IDLE;
+// Azzerata in initFSM() ma non usata altrove
 static float lastTiltAngle = 0.0f;
+// Istante da cui l'angolo e' stabile (per i 2 s di attesa)
 static uint32_t tiltStabilityTimer = 0;
+// Non usata nel codice attuale
 static float peakVerticalAngle = 0.0f; 
+// Angolo al controllo precedente (1 s prima): serve per la velocita'
 static float angleOneSecondAgo = 0.0f; 
 
 // --- STATI FSM HANDGRIP ---
@@ -56,15 +73,19 @@ static HandgripState currentHgState = HG_CALIB_WAIT_STRIKE;
 // Calibrazione (3 strette)
 static float hgPeaks[3] = {0.0f, 0.0f, 0.0f};
 static uint8_t hgPeakCount = 0;
+// Picco della stretta in corso
 static float currentMaxPeak = 0.0f;
 
 // Target e Fondoscala
 static float hgMediaPeaks = 0.0f;  // Fondo scala Barra LED
 static float hgTargetForce = 0.0f; // Target = Media / 3
 
+// Ultimo istante con forza >= target: serve a contare i 5 s di rilascio
 static uint32_t hgReleaseTimer = 0;
 
 // Gestione dei tempi (in millisecondi)
+// StartMs = istante di partenza, Running = sta contando, FrozenMs = valore mostrato da fermo.
+// Tempo 1 = test (pulsante AZZERA T1), Tempo 2 = fase della manovra.
 uint32_t tempo1StartMs = 0;
 bool tempo1Running = false;
 uint32_t tempo1FrozenMs = 0;
@@ -76,7 +97,11 @@ uint32_t tempo2FrozenMs = 0;
 // Controllo temporale a 50 FPS per il refresh dei LED
 static uint32_t lastLedUpdate = 0;
 
+// Cambia la manovra attiva. Azzera le sotto-macchine di Valsalva, Tilt e Hand Grip,
+// spegne i LED e, per una manovra (non per IDLE), fa lampeggiare la barra del suo colore.
+// Il lampeggio usa delay(): blocca il programma per circa 3,2 s (2 x (480 + 100 + 1000) ms).
 void setTestMode(SystemTestMode newMode) {
+    // Nessun effetto se la manovra e' gia' quella attiva
     if (currentTestMode == newMode) return;
     
     currentTestMode = newMode;
@@ -121,6 +146,7 @@ void setTestMode(SystemTestMode newMode) {
             break;
     }
 
+    // Lampeggio di conferma ripetuto 2 volte, ciascuno seguito da 1 s di pausa
     if (executeWait) {
         for (int i = 0; i < 2; i++) {
             blinkLedsConfirm(r, g, b); 
@@ -133,6 +159,7 @@ void setTestMode(SystemTestMode newMode) {
     }
 }
 
+// Stato iniziale all'accensione: tempi a zero, nessuna manovra attiva
 void initFSM() {
     tempo1StartMs = 0;
     tempo1Running = false;
@@ -147,6 +174,7 @@ void initFSM() {
     currentTestMode = TEST_MODE_IDLE;
 }
 
+// Pulsante AZZERA T1: se T1 e' fermo lo fa ripartire da 0, se sta contando lo ferma
 void onAzzeraTempo1Pressed() {
     if (!tempo1Running) {
         tempo1StartMs = millis();
@@ -162,6 +190,15 @@ void onAzzeraTempo1Pressed() {
     }
 }
 
+// ---------------------------------------------------------------------
+// TILT TEST
+// OUT2 = angolo del lettino in continuo (0..TILT_ANGLE_MAX -> DAC 0..255).
+// Le fasi vengono valutate una volta al secondo:
+//   TILT_IDLE     -> TILT_RISING    angolo >= 30 e in salita: marker 1 V / 1 s
+//   TILT_RISING   -> TILT_VERTICAL  angolo >= 55 fermo per 2 s: marker 1 V / 2 s, T2 riparte
+//   TILT_VERTICAL -> TILT_FALLING   angolo < 55: marker 1 V / 1 s, T2 si ferma
+//   TILT_FALLING  -> IDLE           angolo < 5 fermo per 2 s: marker 1 V / 2 s
+// ---------------------------------------------------------------------
 void updateTiltFSM() {
     if (currentTestMode != TEST_MODE_TILT) return;
 
@@ -171,12 +208,14 @@ void updateTiltFSM() {
     if (normalized < 0.0f) normalized = 0.0f;
     writeOutput(PIN_DAC_OUT2, (uint8_t)(normalized * 255.0f));
 
+    // Da qui in poi il codice gira solo una volta al secondo
     static uint32_t lastTiltCheckTime = 0;
     if (millis() - lastTiltCheckTime < 1000) {
         return; 
     }
     lastTiltCheckTime = millis();
 
+    // Variazione dell'angolo nell'ultimo secondo (gradi/s): > 0 salita, < 0 discesa
     float deltaAnglePerSec = angle - angleOneSecondAgo;
 
     switch (currentTiltPhase) {
@@ -231,9 +270,17 @@ void updateTiltFSM() {
             break;
     }
 
+    // Memorizza l'angolo per il confronto del secondo successivo
     angleOneSecondAgo = angle;
 }
 
+// ---------------------------------------------------------------------
+// VALSALVA
+// OUT2 = pressione SP1 (0..VALSALVA_MAX_MMHG -> DAC 0..255).
+//   VALSALVA_IDLE   -> VALSALVA_ACTIVE  pressione >= 25 mmHg: marker 2 V / 1 s, T2 riparte
+//   VALSALVA_ACTIVE -> IDLE             pressione < 10 mmHg per 3 s: marker 2 V / 2 s,
+//                                       T2 fermo sulla durata del soffio (3 s esclusi)
+// ---------------------------------------------------------------------
 void updateValsalvaFSM() {
     if (currentTestMode != TEST_MODE_VALSALVA) return;
 
@@ -279,6 +326,7 @@ void updateValsalvaFSM() {
     }
 }
 
+// Riporta l'Hand Grip all'inizio della taratura (nessuna stretta registrata)
 void resetHandgripCalib() {
     currentHgState = HG_CALIB_WAIT_STRIKE;
     hgPeakCount = 0;
@@ -289,6 +337,16 @@ void resetHandgripCalib() {
     Serial.println(">> HANDGRIP: Calibrazione resettata.");
 }
 
+// ---------------------------------------------------------------------
+// HAND GRIP
+// OUT2 = forza (0..HANDGRIP_ADC_MAX_KG -> DAC 0..255).
+//   HG_CALIB_WAIT_STRIKE -> HG_CALIB_IN_STRIKE   forza >= 5 kg: inizia una stretta
+//   HG_CALIB_IN_STRIKE   -> registra il picco    forza < 5 kg: fine stretta; dopo la terza
+//                                                calcola media e target (media / 3), T2 riparte (riposo)
+//   HG_CALIB_DONE        -> HG_ISOMETRIC_ACTIVE  forza >= target: marker 3 V / 1 s, T2 riparte
+//   HG_ISOMETRIC_ACTIVE  -> IDLE                 forza < target per 5 s: marker 3 V / 2 s,
+//                                                T2 fermo sulla durata della contrazione
+// ---------------------------------------------------------------------
 void updateHandgripFSM() {
     if (currentTestMode != TEST_MODE_HANDGRIP) return;
 
@@ -386,6 +444,15 @@ void updateHandgripFSM() {
     }
 }
 
+// ---------------------------------------------------------------------
+// CICLO DELLA MACCHINA A STATI (chiamato a ogni loop)
+// 1. pulsante AZZERA T1
+// 2. evento del pulsante MARKER (click singolo, doppio, pressione lunga)
+// 3. in IDLE: riconoscimento della manovra (doppio click, Tilt, Valsalva, Hand Grip)
+// 4. effetto dell'evento MARKER nella manovra corrente
+// 5. avanzamento della manovra attiva
+// 6. barra LED (al massimo ogni 20 ms), riga di stato su seriale, fine del marker
+// ---------------------------------------------------------------------
 void updateFSM() {
     if (isBtnAzzeraT1Pressed()) {
         onAzzeraTempo1Pressed();
@@ -419,6 +486,8 @@ void updateFSM() {
 
     // GESTIONE EVENTI TASTO MARKER
     switch (btnEvent) {
+        // Click singolo: nel Deep Breathing avvia la registrazione,
+        // altrove marker generico 1,5 V / 1 s e T2 riparte
         case EVENT_SINGLE_CLICK:
             if (currentTestMode == TEST_MODE_DEEP_BREATHING) {
                 if (millis() - dbTestStartTime >= HUMAN_LOCKOUT_MS) {
@@ -440,6 +509,7 @@ void updateFSM() {
             }
             break;
 
+        // Doppio click nel Deep Breathing: stop senza marker (l'avvio e' gestito sopra, in IDLE)
         case EVENT_DOUBLE_CLICK:
             if (currentTestMode == TEST_MODE_DEEP_BREATHING) {
                 if (millis() - dbTestStartTime >= HUMAN_LOCKOUT_MS) {
@@ -454,6 +524,8 @@ void updateFSM() {
             }
             break;
 
+        // Pressione >= 5 s (riconosciuta al rilascio): marker Cold Face 5 V / 1 s, T2 riparte.
+        // Non cambia la manovra attiva.
         case EVENT_LONG_PRESS:
             tempo2StartMs = millis();
             tempo2Running = true;
@@ -472,6 +544,7 @@ void updateFSM() {
             break;
 
         case TEST_MODE_DEEP_BREATHING:
+            // Deep Breathing: dopo 100 s di registrazione marker 4 V / 2 s e ritorno in IDLE
             if (deepBreathingRecording) {
                 uint32_t elapsedTime = millis() - tempo2StartMs;
                 if (elapsedTime >= DEEP_BREATHING_TOTAL_MS) {
@@ -529,10 +602,14 @@ void updateFSM() {
         }
     }
 
+    // Riga di stato su seriale (una volta al secondo durante un test)
     logCurrentTestStatus();
+    // Riporta OUT1 a 0 V quando la durata del marker e' trascorsa
     updateMarker();
 }
 
+// Tempi in secondi per i display: valore corrente se il tempo sta contando,
+// altrimenti il valore congelato
 float getTempo1Seconds() {
     if (tempo1Running) {
         return (millis() - tempo1StartMs) / 1000.0f;
@@ -541,6 +618,7 @@ float getTempo1Seconds() {
     }
 }
 
+// true mentre la barra LED del Deep Breathing e' attiva
 bool isDeepBreathingActive() {
     return deepBreathingLedsActive;
 }
@@ -553,6 +631,8 @@ float getTempo2Seconds() {
     }
 }
 
+// In IDLE stampa un messaggio una sola volta; durante un test stampa ogni secondo
+// il valore del sensore della manovra.
 void logCurrentTestStatus() {
     static SystemTestMode lastLoggedMode = (SystemTestMode)-1; 
     static uint32_t lastLogTime = 0;

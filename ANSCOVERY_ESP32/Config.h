@@ -1,3 +1,9 @@
+// =====================================================================
+// Config.h - Parametri del progetto
+// Pin, soglie delle manovre, tensioni e durate dei marker, tarature dei
+// sensori. Per cambiare un valore numerico del sistema si modifica qui.
+// =====================================================================
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
@@ -23,19 +29,23 @@
 // Pulsanti
 #define PIN_BTN1              35
 #define PIN_BTN2              32
+// Nomi funzionali dei pulsanti usati dal codice
 #define PIN_BTN_MARKER        PIN_BTN1
 #define PIN_BTN_AZZERA_T1     PIN_BTN2
 
 // Sensori e Ingressi Analogici
 #define PIN_PRESS1            12
 #define PIN_PRESS2            14
+// PIN_ADC_TILT non e' usato: l'angolo arriva dall'MPU-6050 via I2C (pin 21/22)
 #define PIN_ADC_TILT          34
+// Nomi funzionali degli ingressi di pressione usati dal codice
 #define PIN_ADC_VALSALVA      PIN_PRESS1
 #define PIN_ADC_HANDGRIP      PIN_PRESS2
 
 // Uscite DAC per Marker
 #define PIN_DAC1              25
 #define PIN_DAC2              26
+// OUT1 = canale marker, OUT2 = canale segnale continuo
 #define PIN_DAC_OUT1          PIN_DAC1
 #define PIN_DAC_OUT2          PIN_DAC2
 
@@ -44,13 +54,18 @@
 // ==========================================
 
 // Soglie di Attivazione
+// Tilt: inizio della salita (vedi updateTiltFSM in FSM.cpp)
 #define THRESHOLD_TILT_DEG    30.0f
+// Fondo scala di OUT2 nel Tilt: 60 gradi = DAC 255
 #define TILT_ANGLE_MAX   60.0f  // Fondo scala per la mappatura dell'angolo (0..60 gradi)
+// Valsalva: inizio sopra 25 mmHg, fine sotto 10 mmHg
 #define VALSALVA_START_THRESH    25.0f
 #define VALSALVA_END_THRESH   10.0f
+// PRELOAD_HANDGRIP non e' usato. E' definito di nuovo piu' sotto (5.0f): vale l'ultima definizione
 #define PRELOAD_HANDGRIP      15.0f
 
 // Tensioni Marker (DAC)
+// Il DAC arriva a 3,3 V: senza stadio 0-5 V i marker da 4 V e 5 V escono entrambi a 3,3 V
 #define VOLT_MARKER_TILT      1.0f
 #define VOLT_MARKER_VALSALVA  2.0f
 #define VOLT_MARKER_HANDGRIP  3.0f
@@ -59,33 +74,40 @@
 #define VOLT_MARKER_GENERIC      1.5f  // 1 Click: Marker generico (1.5V)
 
 // Durate Marker (ms)
+// Impulso di inizio evento (1 s) e di fine evento (2 s)
 #define DURATION_MARKER_START 1000
 #define DURATION_MARKER_END   2000
 
 // Sensore Valsalva (Pressione Polmonare - mmHg)
+// Conversione ADC -> mmHg in readValsalvaPressure() (Hardware.cpp)
 #define VALSALVA_ZERO_ADC    30.0f  // Valore ADC a riposo (da tarare)
 #define VALSALVA_MAX_ADC    3800.0f  // Valore ADC a fondo scala (es. 100 mmHg)
 #define VALSALVA_MAX_MMHG    100.0f  // Fondo scala in mmHg
+// Barra LED della Valsalva (Leds.cpp)
 #define VALSALVA_MAX_SCALE 60.0f  // Fondo scala della barra LED (60 mmHg)
 #define TARGET_VALSALVA    40.0f  // Target da raggiungere (40 mmHg)
 #define VALSALVA_END_HOLD_MS 3000 // 3 secondi continuous hold < 10 mmHg
 
 // --- PARAMETRI HANDGRIP TEST ---
+// Usati da updateHandgripFSM() in FSM.cpp; HANDGRIP_ADC_MAX_KG e' il fondo scala di OUT2
 #define HANDGRIP_PEAK_THRESH       5.0f    // Soglia minima per considerare una "stretta" (kg)
 #define HANDGRIP_REST_HOLD_MS      5000    // Tempo di rilascio finale per terminare il test (5 sec)
 #define VOLT_MARKER_HANDGRIP       3.0f    // Marker OUT1 = 3.0 V (1s inizio, 2s fine)
 #define HANDGRIP_ADC_MAX_KG        50.0f   // Fondo scala fisico del sensore di forza
 
 // Sensore Handgrip (Forza Isometrica - Kg / mmHg)
+// Conversione ADC -> kg in readHandGripPressure() (Hardware.cpp)
 #define HANDGRIP_ZERO_ADC    30.0f  // Valore ADC a riposo (da tarare)
 #define HANDGRIP_MAX_ADC    3800.0f  // Valore ADC a fondo scala (es. 50 kg)
 #define HANDGRIP_MAX_KG       50.0f  // Fondo scala in Kg
 
 // Soglie Cliniche
+// Non usate nel codice attuale (il target della barra Valsalva e' TARGET_VALSALVA)
 #define THRESHOLD_VALSALVA   40.0f   // Target tipico Valsalva: 40 mmHg
 #define PRELOAD_HANDGRIP      5.0f   // Precarico/forza minima per avvio Handgrip
 
 // Parametri Ritmici Deep Breathing
+// Usati dalla barra LED (Leds.cpp) e dalla durata della registrazione (FSM.cpp: 10 cicli)
 #define BREATH_IN_TIME_MS   5000  // 5 secondi Inspirazione
 #define BREATH_OUT_TIME_MS  5000  // 5 secondi Espirazione
 #define BREATH_CYCLE_MS     (BREATH_IN_TIME_MS + BREATH_OUT_TIME_MS) // 10000 ms totali
