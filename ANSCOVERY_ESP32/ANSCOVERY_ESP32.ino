@@ -19,4 +19,6 @@ void loop() {
     updateFSM();
 
     updateDisplays(getTempo1Seconds(), getTempo2Seconds());
+
+    printOutputs();
 }

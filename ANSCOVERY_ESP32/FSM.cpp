@@ -169,7 +169,7 @@ void updateTiltFSM() {
     float normalized = angle / TILT_ANGLE_MAX;
     if (normalized > 1.0f) normalized = 1.0f;
     if (normalized < 0.0f) normalized = 0.0f;
-    dacWrite(PIN_DAC_OUT2, (uint8_t)(normalized * 255.0f));
+    writeOutput(PIN_DAC_OUT2, (uint8_t)(normalized * 255.0f));
 
     static uint32_t lastTiltCheckTime = 0;
     if (millis() - lastTiltCheckTime < 1000) {
@@ -242,7 +242,7 @@ void updateValsalvaFSM() {
     float normalized = pressure / VALSALVA_MAX_MMHG;
     if (normalized > 1.0f) normalized = 1.0f;
     if (normalized < 0.0f) normalized = 0.0f;
-    dacWrite(PIN_DAC_OUT2, (uint8_t)(normalized * 255.0f));
+    writeOutput(PIN_DAC_OUT2, (uint8_t)(normalized * 255.0f));
 
     switch (currentValsalvaPhase) {
         case VALSALVA_IDLE:
@@ -296,7 +296,7 @@ void updateHandgripFSM() {
     float normalizedOut2 = force / HANDGRIP_ADC_MAX_KG;
     if (normalizedOut2 > 1.0f) normalizedOut2 = 1.0f;
     if (normalizedOut2 < 0.0f) normalizedOut2 = 0.0f;
-    dacWrite(PIN_DAC_OUT2, (uint8_t)(normalizedOut2 * 255.0f));
+    writeOutput(PIN_DAC_OUT2, (uint8_t)(normalizedOut2 * 255.0f));
 
     switch (currentHgState) {
         case HG_CALIB_WAIT_STRIKE:

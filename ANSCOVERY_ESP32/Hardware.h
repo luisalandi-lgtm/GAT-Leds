@@ -20,4 +20,8 @@ bool isBtnAzzeraT1Pressed();
 MarkerEvent checkMarkerBtnEvent();
 void triggerMarker(float voltage, unsigned long durationMs);
 void updateMarker();
+
+// Scrive il DAC e memorizza il valore per la stampa su seriale
+void writeOutput(uint8_t pin, uint8_t value);
+void printOutputs();
 #endif

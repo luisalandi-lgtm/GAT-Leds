@@ -9,6 +9,36 @@ static unsigned long markerStartTime = 0;
 static unsigned long markerDuration = 0;
 static bool markerActive = false;
 
+// Ultimi valori scritti sui DAC (0..255), per la stampa su seriale
+static uint8_t out1Value = 0;
+static uint8_t out2Value = 0;
+
+void writeOutput(uint8_t pin, uint8_t value) {
+    dacWrite(pin, value);
+    if (pin == PIN_DAC_OUT1) out1Value = value;
+    if (pin == PIN_DAC_OUT2) out2Value = value;
+}
+
+// Stampa OUT1/OUT2 quando OUT1 cambia (marker) e comunque ogni secondo.
+// Tensione = valore DAC * 3.3 V / 255 (tensione sul pin, senza stadio 0-5 V)
+void printOutputs() {
+    static uint8_t lastOut1 = 0;
+    static unsigned long lastPrint = 0;
+    if (out1Value != lastOut1 || millis() - lastPrint >= 1000) {
+        lastOut1 = out1Value;
+        lastPrint = millis();
+        Serial.print("[USCITE] OUT1: ");
+        Serial.print(out1Value * 3.3f / 255.0f, 2);
+        Serial.print(" V (DAC ");
+        Serial.print(out1Value);
+        Serial.print(") | OUT2: ");
+        Serial.print(out2Value * 3.3f / 255.0f, 2);
+        Serial.print(" V (DAC ");
+        Serial.print(out2Value);
+        Serial.println(")");
+    }
+}
+
 void initHardware() {
     pinMode(PIN_BTN_MARKER, INPUT_PULLUP);
     pinMode(PIN_BTN_AZZERA_T1, INPUT_PULLUP);
@@ -66,7 +96,7 @@ void updateTiltDAC(float angle) {
     if (normalized < 0.0f) normalized = 0.0f;
     
     uint8_t dacVal = (uint8_t)(normalized * 255.0f);
-    dacWrite(PIN_DAC_OUT2, dacVal);
+    writeOutput(PIN_DAC_OUT2, dacVal);
 }
 
 float readValsalvaPressure() {
@@ -157,7 +187,7 @@ void triggerMarker(float voltage, unsigned long durationMs) {
     int dacValue = (int)((voltage / 3.3f) * 255.0f);
     if (dacValue > 255) dacValue = 255;
     
-    dacWrite(PIN_DAC_OUT1, dacValue);
+    writeOutput(PIN_DAC_OUT1, dacValue);
     markerStartTime = millis();
     markerDuration = durationMs;
     markerActive = true;
@@ -165,7 +195,7 @@ void triggerMarker(float voltage, unsigned long durationMs) {
 
 void updateMarker() {
     if (markerActive && (millis() - markerStartTime >= markerDuration)) {
-        dacWrite(PIN_DAC_OUT1, 0);
+        writeOutput(PIN_DAC_OUT1, 0);
         markerActive = false;
     }
 }
