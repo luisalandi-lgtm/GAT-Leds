@@ -27,7 +27,7 @@ display e marca gli eventi sul poligrafo con due uscite analogiche
 | `ANSCOVERY_ESP32.ino` | `setup()` e `loop()` |
 | `Config.h` | tutti i parametri: pin, soglie, tempi, tensioni dei marker, tarature |
 | `FSM.h/.cpp` | riconoscimento della manovra in IDLE, pulsante MARKER, barra LED, stato su seriale |
-| `Maneuvers.h` | interfaccia delle quattro manovre |
+| `Maneuvers.h` | interfaccia delle cinque manovre |
 | `TiltTest.cpp`, `Valsalva.cpp`, `Handgrip.cpp`, `DeepBreathing.cpp`, `ColdFace.cpp` | una manovra per file, ciascuna con la sua macchina a stati |
 | `Sensors.h/.cpp` | angolo lettino, pressione Valsalva, forza Hand Grip |
 | `Buttons.h/.cpp` | click singolo, doppio click, pressione lunga, AZZERA T1 |
