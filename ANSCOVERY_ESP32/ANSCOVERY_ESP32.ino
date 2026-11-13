@@ -2,30 +2,37 @@
 // ANSCOVERY ESP32 - Scheda di controllo del kit per i test autonomici
 // SparkBio - uso esclusivo di ricerca (RUO)
 //
-// Sketch principale: inizializza i moduli e richiama di continuo la
-// macchina a stati (FSM), i display dei tempi e la stampa delle uscite.
+// Struttura del progetto:
+//   Config.h          tutti i parametri (pin, soglie, tempi, tarature)
+//   FSM               riconoscimento e gestione della manovra attiva
+//   TiltTest, Valsalva, Handgrip, DeepBreathing   le singole manovre
+//   Sensors           angolo lettino, pressione Valsalva, forza Hand Grip
+//   Buttons           pulsanti MARKER e AZZERA T1
+//   Outputs           uscite DAC: OUT1 marker, OUT2 segnale continuo
+//   Timers            Tempo 1 e Tempo 2
+//   Leds, Display     barra LED e display dei tempi
 // =====================================================================
 
 #include "Config.h"
-#include "Hardware.h"
+#include "Buttons.h"
+#include "Sensors.h"
+#include "Outputs.h"
+#include "Timers.h"
 #include "FSM.h"
 #include "Display.h"
 #include "Leds.h"
 
 // Eseguita una volta all'accensione o dopo un reset (tasto RST)
 void setup() {
-  Serial.begin(115200);
-  Serial.println("ANSCOVERY ESP32 - Avvio Sistema...");
+    Serial.begin(SERIAL_BAUD);
+    Serial.println("ANSCOVERY ESP32 - Avvio Sistema...");
 
-  // Pulsanti, ingressi analogici, bus I2C del sensore angolare
-  initHardware();
-  // Barra LED WS2812B
-  initLeds();
-  // Display TM1637 di Tempo 1 e Tempo 2 (mostrano 00:00)
-  initDisplayHardware();
-  clearLeds();
-  // Tempi a zero, nessuna manovra attiva (IDLE)
-  initFSM();
+    initButtons();
+    initSensors();
+    initLeds();
+    initDisplays();
+    clearLeds();
+    initFSM();
 }
 
 // Ripetuta di continuo: le funzioni chiamate qui non devono bloccare a lungo
@@ -33,9 +40,9 @@ void loop() {
     // Pulsanti, sensori, manovra in corso, barra LED e marker
     updateFSM();
 
-    // Scrive Tempo 1 e Tempo 2 sui display (MM:SS)
-    updateDisplays(getTempo1Seconds(), getTempo2Seconds());
+    // Tempo 1 e Tempo 2 sui display (MM:SS)
+    updateDisplays((uint32_t)getTempo1Seconds(), (uint32_t)getTempo2Seconds());
 
-    // Stampa i valori di OUT1 e OUT2 sul Serial Monitor
+    // Valori di OUT1 e OUT2 sul Serial Monitor
     printOutputs();
 }
