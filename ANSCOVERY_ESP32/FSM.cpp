@@ -25,6 +25,7 @@ static void logCurrentTestStatus();
 // Azzera le fasi di Valsalva, Tilt e Hand Grip e spegne i LED. Per una
 // manovra (non per IDLE) fa lampeggiare la barra del suo colore: il
 // lampeggio usa delay() e blocca il programma per circa 3,2 s.
+// Il ritorno in IDLE porta OUT2 a 0 V.
 // ---------------------------------------------------------------------
 void setTestMode(SystemTestMode newMode) {
     if (currentTestMode == newMode) return;
@@ -62,10 +63,16 @@ void setTestMode(SystemTestMode newMode) {
             r = 0; g = 255; b = 0;       // verde
             break;
 
+        case TEST_MODE_COLD_FACE:
+            Serial.println(">> AUTO-DETECT: Attivato COLD FACE! Attesa 2s...");
+            r = 0; g = 255; b = 255;     // ciano
+            break;
+
         case TEST_MODE_IDLE:
         default:
             Serial.println(">> FSM: Sistema in IDLE");
             clearLeds();
+            writeOut2Normalized(0.0f);
             executeWait = false;
             break;
     }
@@ -91,9 +98,10 @@ void initFSM() {
 
 // ---------------------------------------------------------------------
 // In IDLE: avvia la prima manovra riconosciuta, in quest'ordine:
-// doppio click -> Deep Breathing, angolo -> Tilt, pressione -> Valsalva,
-// forza -> Hand Grip. Restituisce l'evento del pulsante ancora da gestire
-// (EVENT_NONE se il doppio click e' stato usato per avviare il Deep Breathing).
+// doppio click -> Deep Breathing, pressione lunga -> Cold Face,
+// angolo -> Tilt, pressione -> Valsalva, forza -> Hand Grip.
+// Restituisce l'evento del pulsante ancora da gestire (EVENT_NONE se e'
+// stato usato per avviare il Deep Breathing o il Cold Face).
 // ---------------------------------------------------------------------
 static MarkerEvent detectTestStart(MarkerEvent btnEvent) {
     float currentAngle = readTiltAngle();
@@ -102,6 +110,10 @@ static MarkerEvent detectTestStart(MarkerEvent btnEvent) {
 
     if (btnEvent == EVENT_DOUBLE_CLICK) {
         startDeepBreathing();
+        btnEvent = EVENT_NONE;
+    }
+    else if (btnEvent == EVENT_LONG_PRESS) {
+        startColdFace();
         btnEvent = EVENT_NONE;
     }
     else if (abs(currentAngle) > IDLE_TRIGGER_TILT_DEG) {
@@ -124,6 +136,8 @@ static void handleMarkerEvent(MarkerEvent btnEvent) {
         case EVENT_SINGLE_CLICK:
             if (currentTestMode == TEST_MODE_DEEP_BREATHING) {
                 deepBreathingOnClick();
+            } else if (currentTestMode == TEST_MODE_COLD_FACE) {
+                coldFaceOnClick();
             } else {
                 // Marker generico, in qualunque altro stato
                 restartTempo2();
@@ -140,7 +154,9 @@ static void handleMarkerEvent(MarkerEvent btnEvent) {
             break;
 
         case EVENT_LONG_PRESS:
-            // Cold Face: solo marker, la manovra attiva non cambia
+            // In IDLE avvia il Cold Face (detectTestStart); nel Cold Face non ha effetto.
+            // Durante le altre manovre: solo marker 5 V / 1 s, la manovra non cambia.
+            if (currentTestMode == TEST_MODE_COLD_FACE) break;
             restartTempo2();
             Serial.println(">> MARKER: Long Press -> Cold Face (5.0V) & Azzera T2");
             triggerMarker(VOLT_MARKER_COLD, DURATION_MARKER_START);
@@ -157,13 +173,14 @@ static void runActiveTest() {
         case TEST_MODE_DEEP_BREATHING: updateDeepBreathing(); break;
         case TEST_MODE_VALSALVA:       updateValsalva();      break;
         case TEST_MODE_HANDGRIP:       updateHandgrip();      break;
+        case TEST_MODE_COLD_FACE:      updateColdFace();      break;
         case TEST_MODE_IDLE:
         default:
             break;
     }
 }
 
-// Barra LED, al massimo ogni LED_REFRESH_MS (spenta durante il Tilt)
+// Barra LED, al massimo ogni LED_REFRESH_MS (spenta durante Tilt e Cold Face)
 static void refreshLeds() {
     if (millis() - lastLedUpdate < LED_REFRESH_MS) return;
     lastLedUpdate = millis();
@@ -174,6 +191,7 @@ static void refreshLeds() {
         case TEST_MODE_VALSALVA:       updateValsalvaLeds(readValsalvaPressure());         break;
         case TEST_MODE_HANDGRIP:       refreshHandgripLeds();                              break;
         case TEST_MODE_TILT:
+        case TEST_MODE_COLD_FACE:
         default:
             break;
     }
@@ -210,7 +228,7 @@ static void logCurrentTestStatus() {
 
     if (currentTestMode == TEST_MODE_IDLE) {
         if (lastLoggedMode != TEST_MODE_IDLE) {
-            Serial.println("[STATO: IDLE] Attesa test (Tilt >10°, Valsalva >20mmHg, Handgrip >5kg, DblClick DB)");
+            Serial.println("[STATO: IDLE] Attesa test (Tilt >10°, Valsalva >20mmHg, Handgrip >5kg, DblClick DB, Pressione 5s CF)");
             lastLoggedMode = TEST_MODE_IDLE;
         }
         return;
@@ -245,6 +263,12 @@ static void logCurrentTestStatus() {
                 Serial.print("[STATO: DEEP BREATHING] T2: ");
                 Serial.print(getTempo2Seconds(), 1);
                 Serial.println(" s / 100 s");
+                break;
+
+            case TEST_MODE_COLD_FACE:
+                Serial.print("[STATO: COLD FACE] T2: ");
+                Serial.print(getTempo2Seconds(), 1);
+                Serial.println(" s (click singolo per terminare)");
                 break;
 
             default:

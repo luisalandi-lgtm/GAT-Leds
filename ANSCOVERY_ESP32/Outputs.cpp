@@ -9,6 +9,19 @@ static unsigned long markerStartTime = 0;
 static unsigned long markerDuration = 0;
 static bool markerActive = false;
 
+// Fine dell'ultimo marker (per la pausa a 0 V prima del successivo)
+static unsigned long markerEndTime = 0;
+static bool markerEverEnded = false;
+
+// Coda circolare dei marker in attesa
+struct MarkerRequest {
+    float voltage;
+    unsigned long durationMs;
+};
+static MarkerRequest markerQueue[MARKER_QUEUE_SIZE];
+static uint8_t queueHead = 0;
+static uint8_t queueCount = 0;
+
 // Ultimi valori scritti sui DAC (0..255), per la stampa su seriale
 static uint8_t out1Value = 0;
 static uint8_t out2Value = 0;
@@ -19,9 +32,12 @@ static void writeOutput(uint8_t pin, uint8_t value) {
     if (pin == PIN_DAC_OUT2) out2Value = value;
 }
 
-void triggerMarker(float voltage, unsigned long durationMs) {
-    if (markerActive) return;
+void initOutputs() {
+    writeOutput(PIN_DAC_OUT1, 0);
+    writeOutput(PIN_DAC_OUT2, 0);
+}
 
+static void startMarker(float voltage, unsigned long durationMs) {
     // Tensione -> valore DAC (DAC_FULL_SCALE_V = 255); oltre il fondo scala viene limitata
     int dacValue = (int)((voltage / DAC_FULL_SCALE_V) * 255.0f);
     if (dacValue > DAC_MAX_VALUE) dacValue = DAC_MAX_VALUE;
@@ -32,10 +48,44 @@ void triggerMarker(float voltage, unsigned long durationMs) {
     markerActive = true;
 }
 
+// true se e' trascorsa la pausa a 0 V dopo l'ultimo marker
+static bool markerGapElapsed() {
+    return !markerEverEnded || (millis() - markerEndTime >= MARKER_GAP_MS);
+}
+
+void triggerMarker(float voltage, unsigned long durationMs) {
+    // OUT1 libero: il marker parte subito
+    if (!markerActive && queueCount == 0 && markerGapElapsed()) {
+        startMarker(voltage, durationMs);
+        return;
+    }
+
+    // Altrimenti va in coda
+    if (queueCount >= MARKER_QUEUE_SIZE) {
+        Serial.println(">> MARKER: coda piena, marker scartato");
+        return;
+    }
+    uint8_t tail = (queueHead + queueCount) % MARKER_QUEUE_SIZE;
+    markerQueue[tail].voltage = voltage;
+    markerQueue[tail].durationMs = durationMs;
+    queueCount++;
+}
+
 void updateMarker() {
+    // Fine del marker in corso
     if (markerActive && (millis() - markerStartTime >= markerDuration)) {
         writeOutput(PIN_DAC_OUT1, 0);
         markerActive = false;
+        markerEndTime = millis();
+        markerEverEnded = true;
+    }
+
+    // Prossimo marker in coda, dopo la pausa a 0 V
+    if (!markerActive && queueCount > 0 && markerGapElapsed()) {
+        MarkerRequest next = markerQueue[queueHead];
+        queueHead = (queueHead + 1) % MARKER_QUEUE_SIZE;
+        queueCount--;
+        startMarker(next.voltage, next.durationMs);
     }
 }
 

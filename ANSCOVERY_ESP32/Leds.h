@@ -19,6 +19,11 @@ void updateIdleLeds();
 // Ritmo del Deep Breathing; con active = false la barra si spegne
 void updateDeepBreathingLeds(bool active);
 
+// Livello del ritmo respiratorio, in fase con la barra: 0.0 a inizio inspirazione,
+// 1.0 a fine inspirazione, di nuovo 0.0 a fine espirazione (andamento sinusoidale).
+// 0.0 se il ritmo non e' ancora partito.
+float getBreathingLevel();
+
 // Barra della Valsalva rispetto al target di VALSALVA_TARGET_MMHG
 void updateValsalvaLeds(float pressure);
 

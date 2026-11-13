@@ -13,7 +13,8 @@ enum SystemTestMode {
     TEST_MODE_TILT,
     TEST_MODE_DEEP_BREATHING,
     TEST_MODE_VALSALVA,
-    TEST_MODE_HANDGRIP
+    TEST_MODE_HANDGRIP,
+    TEST_MODE_COLD_FACE
 };
 
 // Stato iniziale (in setup): tempi a zero, nessuna manovra attiva

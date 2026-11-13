@@ -1,6 +1,7 @@
 // =====================================================================
 // DeepBreathing.cpp - Deep Breathing (respirazione guidata)
 // 1. Doppio click in IDLE: la barra LED guida il ritmo (5 s su, 5 s giu').
+//    OUT2 = sinusoide del ritmo, da 0 (inizio inspirazione) al massimo (fine inspirazione).
 // 2. Click singolo: inizio registrazione, marker 4 V / 1 s, T2 riparte.
 // 3. Dopo 10 respiri (100 s): marker 4 V / 2 s, ritorno in IDLE.
 // Doppio click durante la manovra: stop senza marker.
@@ -61,6 +62,8 @@ void deepBreathingOnDoubleClick() {
 }
 
 void updateDeepBreathing() {
+    writeOut2Normalized(getBreathingLevel());
+
     if (recording) {
         uint32_t elapsedTime = tempo2ElapsedMs();
         if (elapsedTime >= DEEP_BREATHING_TOTAL_MS) {

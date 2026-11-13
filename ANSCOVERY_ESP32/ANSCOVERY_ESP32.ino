@@ -5,7 +5,7 @@
 // Struttura del progetto:
 //   Config.h          tutti i parametri (pin, soglie, tempi, tarature)
 //   FSM               riconoscimento e gestione della manovra attiva
-//   TiltTest, Valsalva, Handgrip, DeepBreathing   le singole manovre
+//   TiltTest, Valsalva, Handgrip, DeepBreathing, ColdFace   le singole manovre
 //   Sensors           angolo lettino, pressione Valsalva, forza Hand Grip
 //   Buttons           pulsanti MARKER e AZZERA T1
 //   Outputs           uscite DAC: OUT1 marker, OUT2 segnale continuo
@@ -24,6 +24,9 @@
 
 // Eseguita una volta all'accensione o dopo un reset (tasto RST)
 void setup() {
+    // Uscite verso il poligrafo a 0 V prima di ogni altra cosa
+    initOutputs();
+
     Serial.begin(SERIAL_BAUD);
     Serial.println("ANSCOVERY ESP32 - Avvio Sistema...");
 

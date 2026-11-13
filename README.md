@@ -28,12 +28,28 @@ display e marca gli eventi sul poligrafo con due uscite analogiche
 | `Config.h` | tutti i parametri: pin, soglie, tempi, tensioni dei marker, tarature |
 | `FSM.h/.cpp` | riconoscimento della manovra in IDLE, pulsante MARKER, barra LED, stato su seriale |
 | `Maneuvers.h` | interfaccia delle quattro manovre |
-| `TiltTest.cpp`, `Valsalva.cpp`, `Handgrip.cpp`, `DeepBreathing.cpp` | una manovra per file, ciascuna con la sua macchina a stati |
+| `TiltTest.cpp`, `Valsalva.cpp`, `Handgrip.cpp`, `DeepBreathing.cpp`, `ColdFace.cpp` | una manovra per file, ciascuna con la sua macchina a stati |
 | `Sensors.h/.cpp` | angolo lettino, pressione Valsalva, forza Hand Grip |
 | `Buttons.h/.cpp` | click singolo, doppio click, pressione lunga, AZZERA T1 |
-| `Outputs.h/.cpp` | marker su OUT1, segnale su OUT2, stampa delle uscite |
+| `Outputs.h/.cpp` | marker su OUT1 (in coda), segnale su OUT2, stampa delle uscite |
 | `Timers.h/.cpp` | Tempo 1 e Tempo 2 |
 | `Leds.h/.cpp`, `Display.h/.cpp` | barra LED e display dei tempi |
+
+## Uscite analogiche (DAC 0-3,3 V, senza stadio 0-5 V)
+
+Entrambe a 0 V all'accensione.
+
+**OUT1 - marker** (impulsi da 1 s = inizio, 2 s = fine; i marker ravvicinati vanno in coda,
+separati da 300 ms a 0 V): Tilt 1 V, click singolo 1,5 V, Valsalva 2 V, Hand Grip 3 V,
+Deep Breathing 4 V, Cold Face 5 V. Oltre 3,3 V il valore e' limitato al massimo del DAC.
+
+**OUT2 - segnale continuo**: Tilt = angolo (0-90 gradi), Valsalva = pressione (0-100 mmHg),
+Hand Grip = forza (0-50 kg), Deep Breathing = sinusoide del ritmo respiratorio (0 a inizio
+inspirazione, massimo a fine inspirazione, periodo 10 s), IDLE e Cold Face = 0 V.
+
+**Cold Face**: pressione del MARKER per almeno 5 s in IDLE -> marker 5 V / 1 s; click singolo
+-> fine test, marker 5 V / 2 s. Durante le altre manovre la pressione lunga da' solo il
+marker 5 V / 1 s.
 
 ## Compilazione
 

@@ -178,6 +178,15 @@ static void buildScenario(const std::string &name) {
         s.valsalva = {{0,0},{2000,0},{4000,130},{10000,130},{11000,0},{20000,0}};
         s.handgrip = {{0,0},{25000,0},{26000,80},{27000,0},{40000,0}};
         s.duration = 40000;
+    } else if (name == "cold_face") {
+        s.btnMarker.push_back({2000, 7500});    // pressione lunga in IDLE: avvio
+        click(s.btnMarker, 20000);              // click singolo: fine
+        s.valsalva = {{0,0},{30000,0},{31000,40},{42000,40},{43000,0},{60000,0}};
+        s.btnMarker.push_back({34000, 40000});  // pressione lunga durante la Valsalva
+        s.duration = 60000;
+    } else if (name == "marker_queue") {
+        click(s.btnMarker, 1000); click(s.btnMarker, 1500); click(s.btnMarker, 2000);
+        s.duration = 8000;
     } else if (name == "valsalva") {
         click(s.btnT1, 500);
         s.valsalva = {{0,0},{3000,0},{5000,45},{17000,42},{18000,5},{30000,5},

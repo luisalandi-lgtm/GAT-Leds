@@ -79,6 +79,16 @@ void updateDeepBreathingLeds(bool active) {
     strip.show();
 }
 
+float getBreathingLevel() {
+    if (breathStartTime == 0) return 0.0f;
+
+    uint32_t t = (millis() - breathStartTime) % BREATH_CYCLE_MS;
+    if (t < BREATH_IN_TIME_MS) {
+        return 0.5f * (1.0f - cosf((float)M_PI * t / BREATH_IN_TIME_MS));
+    }
+    return 0.5f * (1.0f + cosf((float)M_PI * (t - BREATH_IN_TIME_MS) / BREATH_OUT_TIME_MS));
+}
+
 // Barra proporzionale a value su fullScale, con un LED giallo fisso sul target:
 // rossa sotto il target, verde dal target in su.
 static void drawTargetBar(float value, float fullScale, float target) {

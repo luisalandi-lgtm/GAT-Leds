@@ -76,11 +76,16 @@
 #define VOLT_MARKER_VALSALVA    2.0f
 #define VOLT_MARKER_HANDGRIP    3.0f
 #define VOLT_MARKER_DEEPBREATH  4.0f
-#define VOLT_MARKER_COLD        5.0f   // pressione prolungata (Cold Face)
+#define VOLT_MARKER_COLD        5.0f   // Cold Face
 
 // Durata degli impulsi: inizio evento / fine evento
 #define DURATION_MARKER_START   1000
 #define DURATION_MARKER_END     2000
+
+// Coda dei marker: un marker richiesto mentre un altro e' in corso aspetta il suo turno.
+// Tra due marker consecutivi OUT1 resta a 0 V per MARKER_GAP_MS, per distinguerli.
+#define MARKER_QUEUE_SIZE       8
+#define MARKER_GAP_MS           300
 
 // ==========================================
 // 4. PULSANTI
@@ -88,7 +93,7 @@
 
 #define BTN_MIN_CLICK_MS        50     // pressioni piu' brevi vengono ignorate
 #define BTN_DOUBLE_CLICK_GAP_MS 300    // attesa di un altro click prima di decidere
-#define BTN_LONG_PRESS_MS       5000   // pressione prolungata (riconosciuta al rilascio)
+#define BTN_LONG_PRESS_MS       5000   // pressione prolungata (riconosciuta al rilascio): avvia il Cold Face
 
 // ==========================================
 // 5. RICONOSCIMENTO DELLA MANOVRA IN IDLE
@@ -113,7 +118,7 @@
 #define TILT_HORIZONTAL_DEG      5.0f   // ritorno in orizzontale
 #define TILT_RATE_DEG_S          0.5f   // sopra: angolo in movimento; sotto: angolo fermo
 #define TILT_STABLE_TIME_MS      2000   // per quanto l'angolo deve restare fermo
-#define TILT_OUT2_FULL_SCALE_DEG 60.0f  // OUT2: 0..60 gradi -> DAC 0..255
+#define TILT_OUT2_FULL_SCALE_DEG 90.0f  // OUT2: 0..90 gradi -> DAC 0..255
 
 // ==========================================
 // 7. VALSALVA (pressione SP1, mmHg)

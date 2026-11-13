@@ -32,4 +32,9 @@ void deepBreathingOnDoubleClick(); // doppio click: stop manuale
 void updateDeepBreathing();
 bool isDeepBreathingLedsActive();
 
+// ---------- Cold Face (ColdFace.cpp) ----------
+void startColdFace();           // pressione lunga in IDLE
+void coldFaceOnClick();         // click singolo: fine del test
+void updateColdFace();
+
 #endif
