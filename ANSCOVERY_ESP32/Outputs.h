@@ -4,8 +4,8 @@
 // OUT2 = segnale continuo della manovra (angolo, pressione, forza)
 // =====================================================================
 
-#ifndef OUTPUTS_H
-#define OUTPUTS_H
+#ifndef ANSCOVERY_OUTPUTS_H
+#define ANSCOVERY_OUTPUTS_H
 
 #include "Config.h"
 

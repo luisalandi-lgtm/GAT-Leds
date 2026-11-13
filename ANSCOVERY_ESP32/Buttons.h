@@ -2,8 +2,8 @@
 // Buttons.h - Pulsanti MARKER e AZZERA T1
 // =====================================================================
 
-#ifndef BUTTONS_H
-#define BUTTONS_H
+#ifndef ANSCOVERY_BUTTONS_H
+#define ANSCOVERY_BUTTONS_H
 
 #include "Config.h"
 

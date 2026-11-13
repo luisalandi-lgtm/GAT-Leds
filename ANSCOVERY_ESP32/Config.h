@@ -4,8 +4,8 @@
 // e le tarature dei sensori. Per cambiare un valore si modifica qui.
 // =====================================================================
 
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef ANSCOVERY_CONFIG_H
+#define ANSCOVERY_CONFIG_H
 
 #include <Arduino.h>
 

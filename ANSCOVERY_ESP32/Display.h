@@ -2,8 +2,8 @@
 // Display.h - Display TM1637 di Tempo 1 e Tempo 2
 // =====================================================================
 
-#ifndef DISPLAY_H
-#define DISPLAY_H
+#ifndef ANSCOVERY_DISPLAY_H
+#define ANSCOVERY_DISPLAY_H
 
 #include "Config.h"
 

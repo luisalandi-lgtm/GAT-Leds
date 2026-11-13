@@ -5,8 +5,8 @@
 // la manovra e' attiva; a fine manovra chiamano setTestMode(TEST_MODE_IDLE).
 // =====================================================================
 
-#ifndef MANEUVERS_H
-#define MANEUVERS_H
+#ifndef ANSCOVERY_MANEUVERS_H
+#define ANSCOVERY_MANEUVERS_H
 
 #include "Config.h"
 

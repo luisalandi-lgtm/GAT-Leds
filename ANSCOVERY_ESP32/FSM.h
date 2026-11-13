@@ -2,8 +2,8 @@
 // FSM.h - Macchina a stati del sistema
 // =====================================================================
 
-#ifndef FSM_H
-#define FSM_H
+#ifndef ANSCOVERY_FSM_H
+#define ANSCOVERY_FSM_H
 
 #include "Config.h"
 

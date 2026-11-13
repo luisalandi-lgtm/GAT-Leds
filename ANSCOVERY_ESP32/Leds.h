@@ -2,8 +2,8 @@
 // Leds.h - Barra LED WS2812B (feedback visivo per paziente e operatore)
 // =====================================================================
 
-#ifndef LEDS_H
-#define LEDS_H
+#ifndef ANSCOVERY_LEDS_H
+#define ANSCOVERY_LEDS_H
 
 #include <Arduino.h>
 

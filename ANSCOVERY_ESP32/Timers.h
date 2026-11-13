@@ -4,8 +4,8 @@
 // mostra un valore "congelato".
 // =====================================================================
 
-#ifndef TIMERS_H
-#define TIMERS_H
+#ifndef ANSCOVERY_TIMERS_H
+#define ANSCOVERY_TIMERS_H
 
 #include "Config.h"
 

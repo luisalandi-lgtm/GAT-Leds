@@ -2,8 +2,8 @@
 // Sensors.h - Lettura dei sensori delle manovre
 // =====================================================================
 
-#ifndef SENSORS_H
-#define SENSORS_H
+#ifndef ANSCOVERY_SENSORS_H
+#define ANSCOVERY_SENSORS_H
 
 #include "Config.h"
 
